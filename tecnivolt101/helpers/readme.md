@@ -1,4 +1,8 @@
-Other helpers:
+Following helpers to be created in HA:
+
+This is the main template responisble for dynamic charging based on solar production and energy prices.
+https://github.com/aceindy/klefr6934-mid-faker/blob/main/tecnivolt101/helpers/Technivolt_charge_current_1
+
 
 input_select.charge_car                    Multiline selector allows to choose from a list of available cars
 input_number.ev_charge_price_threshold     The EV Charge price is the threshold to decide wether to use solar excess production or charge when the price is below the threshold. [default 0.15€/kWh]
