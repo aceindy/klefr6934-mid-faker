@@ -1,0 +1,38 @@
+{#Technivolt_charge_current_1#}
+{% set consumed = states('sensor.power_consumed_phase_1') | float(-1) %}
+{% set produced = states('sensor.power_produced_phase_1') | float(-1) %}
+{% set voltage  = states('sensor.voltage_phase_1') | float(0) %}
+{% set price    = states('sensor.frank_energie_prices_current_electricity_price_all_in') | float(99) %}
+{% set car = states('input_select.charge_car') %}
+{% set battery  = states('sensor.'~ car ) | float(100) %}
+{% set override = states('input_boolean.manual_charge_override') %}
+{% set house_limit = 16 %}
+{% set min_charge_amps = 6 %}
+{% set thresholdprice = states('input_number.ev_charge_price_threshold') | float(0) %}
+{% set force_ev_charge_below = states('input_number.force_ev_charge_below') | float(0) %}
+{# Unavailable sensors → stop charging #}
+{% if consumed == -1 or produced == -1 or voltage == 0 %}
+  {{ house_limit + 1 }}
+
+  {# Manual override → charge at full speed regardless of anything #}
+  {% elif override == 'on' %}
+    0
+
+  {# Battery critical (below 20%) → charge at full speed #}
+  {% elif battery < force_ev_charge_below %}
+    0
+
+  {# Low price → charge by calculated surplus #}
+  {% elif price > thresholdprice %}
+    {% set net = ((consumed - produced) * 1000 / voltage) | round(2) %}
+    {% set surplus = (net * -1) | round(2) %}
+    {% if surplus >= min_charge_amps %}
+      {{ [house_limit - surplus, 0] | max }}
+    {% else %}
+      {{ house_limit + 1 }}
+    {% endif %}
+
+  {# Otherwise, charge at full speed (cheap price ??) #}
+  {% else %}
+    0
+  {% endif %}
