@@ -1,0 +1,367 @@
+###############################################################################
+# Technivolt 101 - Fake KLEFR 6934 / PRO380 Energy Meter
+#
+# Hardware:
+#   - ESP32-WROOM-32D (NodeMCU-32S 30-pin)
+#   - XY-485 TTL-to-RS485 module with AUTOMATIC flow control
+#
+# Wiring:
+#   ESP32 GPIO16 (RX)  ->  RXD (XY-485 module) 
+#   ESP32 GPIO17 (TX)  ->  TXD (XY-485 module)
+#   ESP32 3.3V         ->  VCC (XY-485 module)
+#   ESP32 GND          ->  GND (XY-485 module)
+#   XY-485  A+         ->  CN20 pin 6 (Technivolt)
+#   XY-485  B-         ->  CN20 pin 5 (Technivolt)
+#
+# Technivolt DIP switch settings:
+#   DIP 4=OFF, DIP 5=OFF, DIP 6=ON  -> 16A house limit
+#   DIP 4=OFF, DIP 5=ON,  DIP 6=OFF -> 20A house limit
+#   DIP 4=OFF, DIP 5=ON,  DIP 6=ON  -> 25A house limit
+#   DIP 4=ON,  DIP 5=OFF, DIP 6=OFF -> 32A house limit
+#
+# What the Technivolt actually requests (decoded from UART debug):
+#   01 03 50 0C 00 06 14 CB
+#   Slave: 1  FC: 03  Register: 0x500C  Count: 6  CRC: 0x14CB
+#
+# KLEFR/PRO380 register map (FC03, slave 1):
+#   0x500C / 0x500D  L1 Current (A)   <- Technivolt reads these
+#   0x500E / 0x500F  L2 Current (A)   <- Technivolt reads these
+#   0x5010 / 0x5011  L3 Current (A)   <- Technivolt reads these
+#
+# Modbus settings confirmed from UART debug:
+#   Slave address : 1
+#   Baud rate     : 9600
+#   Data bits     : 8
+#   Parity        : EVEN
+#   Stop bits     : 1
+###############################################################################
+
+substitutions:
+  node_name: "klefr6934-mid-faker"
+  friendly_node_name: "KLEFR6934 MID Faker"
+
+esphome:
+  name: ${node_name}
+  friendly_name: ${friendly_node_name}
+
+esp32:
+  board: nodemcu-32s
+  framework:
+    type: arduino
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_iotpw
+  power_save_mode: none
+  min_auth_mode: WPA2
+
+# Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: ${node_name} FB
+    password: "fallback"
+
+# Enable Captive Portal.
+captive_portal:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption
+
+# Enable Over The Air updates
+ota:
+  - platform: esphome
+
+# Disable logging
+logger:
+  baud_rate: 0
+  logs:
+    sensor: WARN
+    duty_cycle: WARN
+    binary_sensor: WARN
+    light: WARN
+    homeassistant.sensor: WARN
+    text_sensor: WARN
+
+# Enable Web server.
+web_server:
+  port: 80
+  version: 3
+
+# Sync time with Home Assistant.
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+
+external_components:
+  - source: github://epiclabs-io/esphome-modbus-server@master
+    refresh: 60s
+    components:
+      - modbus_server
+
+###############################################################################
+# UART - confirmed settings from UART debug session
+###############################################################################
+uart:
+  - id: rs485_uart
+    rx_pin: GPIO16
+    tx_pin: GPIO17 
+    baud_rate: 9600
+    data_bits: 8
+    parity: EVEN
+    stop_bits: 1
+    debug:
+      direction: BOTH
+      dummy_receiver: false
+      after:
+        timeout: 20ms
+
+###############################################################################
+# Sensors
+###############################################################################
+sensor:
+
+  # --- Voltages from HA (used for power calculation) ---
+  - platform: homeassistant
+    id: l1_voltage
+    internal: true
+    entity_id: sensor.voltage_phase_1
+    unit_of_measurement: "V"
+    filters:
+      - clamp:
+          min_value: 200
+          max_value: 260
+
+  - platform: homeassistant
+    id: l2_voltage
+    internal: true
+    entity_id: sensor.voltage_phase_2
+    unit_of_measurement: "V"
+    filters:
+      - clamp:
+          min_value: 200
+          max_value: 260
+
+  - platform: homeassistant
+    id: l3_voltage
+    internal: true
+    entity_id: sensor.voltage_phase_3
+    unit_of_measurement: "V"
+    filters:
+      - clamp:
+          min_value: 200
+          max_value: 260
+
+  # --- Grid import power per phase (kW) ---
+  - platform: homeassistant
+    id: l1_consumed
+    internal: true
+    entity_id: sensor.power_consumed_phase_1
+    unit_of_measurement: "kW"
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 20
+
+  - platform: homeassistant
+    id: l2_consumed
+    internal: true
+    entity_id: sensor.power_consumed_phase_2
+    unit_of_measurement: "kW"
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 20
+
+  - platform: homeassistant
+    id: l3_consumed
+    internal: true
+    entity_id: sensor.power_consumed_phase_3
+    unit_of_measurement: "kW"
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 20
+
+  # --- Grid export power per phase (kW) ---
+  - platform: homeassistant
+    id: l1_produced
+    internal: true
+    entity_id: sensor.power_produced_phase_1
+    unit_of_measurement: "kW"
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 20
+
+  - platform: homeassistant
+    id: l2_produced
+    internal: true
+    entity_id: sensor.power_produced_phase_2
+    unit_of_measurement: "kW"
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 20
+
+  - platform: homeassistant
+    id: l3_produced
+    internal: true
+    entity_id: sensor.power_produced_phase_3
+    unit_of_measurement: "kW"
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 20
+
+#   --- Net current per phase ---
+#   net = (consumed - produced) * 1000 / voltage
+#   Clamped to 0 when solar surplus exceeds house load
+  - platform: template
+    id: l1_net_current
+    name: "${friendly_node_name} L1 Net Current"
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 2s
+    lambda: |-
+      float consumed = id(l1_consumed).state;
+      float produced = id(l1_produced).state;
+      float voltage  = id(l1_voltage).state;
+      if (isnan(consumed) || isnan(produced) || isnan(voltage) || voltage == 0)
+        return 0.0f;
+      float net = ((consumed - produced) * 1000.0f) / voltage;
+      return max(net, 0.0f);
+  
+  - platform: template
+    id: l2_net_current
+    name: "${friendly_node_name} L2 Net Current"
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 2s
+    lambda: |-
+      float consumed = id(l2_consumed).state;
+      float produced = id(l2_produced).state;
+      float voltage  = id(l2_voltage).state;
+      if (isnan(consumed) || isnan(produced) || isnan(voltage) || voltage == 0)
+        return 0.0f;
+      float net = ((consumed - produced) * 1000.0f) / voltage;
+      return max(net, 0.0f);
+  
+  - platform: template
+    id: l3_net_current
+    name: "${friendly_node_name} L3 Net Current"
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 2s
+    lambda: |-
+      float consumed = id(l3_consumed).state;
+      float produced = id(l3_produced).state;
+      float voltage  = id(l3_voltage).state;
+      if (isnan(consumed) || isnan(produced) || isnan(voltage) || voltage == 0)
+        return 0.0f;
+      float net = ((consumed - produced) * 1000.0f) / voltage;
+      return max(net, 0.0f);
+
+  # --- Diagnostics ---
+  - platform: uptime
+    name: "${friendly_node_name} Uptime"
+
+  - platform: wifi_signal
+    name: "${friendly_node_name} WiFi Signal"
+    update_interval: 60s
+
+###############################################################################
+# Modbus Server - pretends to be KLEFR 6934 / PRO380 at slave address 1
+#
+# The Technivolt requests: 01 03 50 0C 00 06
+# = read 6 registers starting at 0x500C
+# = L1 current (0x500C/0x500D) + L2 (0x500E/0x500F) + L3 (0x5010/0x5011)
+#
+# Each value is a 32-bit IEEE-754 float, Big-endian (ABCD):
+#   high word = register N
+#   low  word = register N+1
+###############################################################################
+modbus_server:
+  - id: klefr_server
+    uart_id: rs485_uart
+    address: 1
+    holding_registers:
+
+      # =======================================================================
+      # L1 Current (0x500C high, 0x500D low)
+      # =======================================================================
+      - start_address: 0x500C
+        default: 0
+        number: 1
+        on_read: |
+          // Snapshot all three at the moment of first current register read
+          float c = id(l1_net_current).state;
+          if (isnan(c)) c = 0.0f;
+          uint32_t bits; memcpy(&bits, &c, 4);
+          return (bits >> 16) & 0xFFFF;
+
+      - start_address: 0x500D
+        default: 0
+        number: 1
+        on_read: |
+          float c = id(l1_net_current).state;
+          if (isnan(c)) c = 0.0f;
+          uint32_t bits; memcpy(&bits, &c, 4);
+          return bits & 0xFFFF;
+
+      # =======================================================================
+      # L2 Current (0x500E high, 0x500F low)
+      # =======================================================================
+      - start_address: 0x500E
+        default: 0
+        number: 1
+        on_read: |
+          float c = id(l2_net_current).state;
+          if (isnan(c)) c = 0.0f;
+          uint32_t bits; memcpy(&bits, &c, 4);
+          return (bits >> 16) & 0xFFFF;
+
+      - start_address: 0x500F
+        default: 0
+        number: 1
+        on_read: |
+          float c = id(l2_net_current).state;
+          if (isnan(c)) c = 0.0f;
+          uint32_t bits; memcpy(&bits, &c, 4);
+          return bits & 0xFFFF;
+
+      # =======================================================================
+      # L3 Current (0x5010 high, 0x5011 low)
+      # =======================================================================
+      - start_address: 0x5010
+        default: 0
+        number: 1
+        on_read: |
+          float c = id(l3_net_current).state;
+          if (isnan(c)) c = 0.0f;
+          uint32_t bits; memcpy(&bits, &c, 4);
+          return (bits >> 16) & 0xFFFF;
+
+      - start_address: 0x5011
+        default: 0
+        number: 1
+        on_read: |
+          float c = id(l3_net_current).state;
+          if (isnan(c)) c = 0.0f;
+          uint32_t bits; memcpy(&bits, &c, 4);
+          return bits & 0xFFFF;
+
+###############################################################################
+# Text sensors - web interface debug info
+###############################################################################
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "${friendly_node_name} IP Address"
+    ssid:
+      name: "${friendly_node_name} SSID"
+
+binary_sensor:
+  - platform: status
+    name: "${friendly_node_name} Status"
