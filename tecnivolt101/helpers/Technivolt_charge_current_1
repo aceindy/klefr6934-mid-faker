@@ -14,15 +14,15 @@
 {% if consumed == -1 or produced == -1 or voltage == 0 %}
   {{ house_limit + 1 }}
 
-  {# Manual override → charge at full speed regardless of anything #}
+{# Manual override → charge at full speed regardless of anything #}
   {% elif override == 'on' %}
     0
-
-  {# Battery critical (below 20%) → charge at full speed #}
+  
+{# Battery critical (below 20%) → charge at full speed #}
   {% elif battery < force_ev_charge_below %}
     0
-
-  {# Low price → charge by calculated surplus #}
+  
+{# Low price → charge by calculated surplus #}
   {% elif price > thresholdprice %}
     {% set net = ((consumed - produced) * 1000 / voltage) | round(2) %}
     {% set surplus = (net * -1) | round(2) %}
@@ -31,8 +31,8 @@
     {% else %}
       {{ house_limit + 1 }}
     {% endif %}
-
-  {# Otherwise, charge at full speed (cheap price ??) #}
+  
+{# Otherwise, charge at full speed (cheap price ??) #}
   {% else %}
     0
   {% endif %}
