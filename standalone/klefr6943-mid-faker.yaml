@@ -34,6 +34,10 @@
 #   Data bits     : 8
 #   Parity        : EVEN
 #   Stop bits     : 1
+#
+# sensor.voltage_phase_1(,2,3) --> Home assistant sensor measured voltage
+# sensor.power_consumed_phase_1(,2,3) --> Home assistant sensor consumed current
+# sensor.power_produced_phase_1(,2,3) --> --> Home assistant sensor produced current
 ###############################################################################
 
 substitutions:
